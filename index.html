@@ -153,6 +153,40 @@
             background: var(--bg-input);
         }
 
+        /* Upload custom design styling */
+        .file-upload-wrapper {
+            position: relative;
+            display: block;
+        }
+        
+        .file-upload-wrapper label {
+            display: block;
+            background: var(--bg-input);
+            border: 1px dashed var(--border);
+            color: var(--text-muted);
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .file-upload-wrapper label:hover {
+            border-color: var(--accent);
+            color: var(--text-main);
+        }
+
+        .file-upload-wrapper input[type="file"] {
+            position: absolute;
+            left: 0;
+            top: 0;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+
         /* Channel List Styling */
         .channel-list-container {
             flex: 1;
@@ -218,8 +252,14 @@
         <aside class="sidebar">
             <h3>Channels</h3>
             <input type="text" id="searchBox" placeholder="Search channels...">
+            
+            <div class="file-upload-wrapper">
+                <label id="uploadLabel" for="uploadM3u">📁 Upload local M3U playlist</label>
+                <input type="file" id="uploadM3u" accept=".m3u,.m3u8">
+            </div>
+
             <div class="channel-list-container" id="channelList">
-                <div style="padding: 20px; text-align: center; color: var(--text-muted);">Load your servers parameters to fetch channels.</div>
+                <div style="padding: 20px; text-align: center; color: var(--text-muted);">Load your server parameters or upload an M3U file to fetch channels.</div>
             </div>
             <input type="text" id="manualChannel" placeholder="Or enter manual Stream ID">
         </aside>
@@ -270,6 +310,7 @@
     let vjsInstance = null;
     let currentChannelId = null;
     let lastStreamUrl = "";
+    let isLocalM3u = false; // Flag to track source tracking differences
 
     // Load credentials from storage on setup
     window.addEventListener('DOMContentLoaded', () => {
@@ -294,11 +335,9 @@
         if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
         if (shakaInstance) { shakaInstance.destroy(); shakaInstance = null; }
         
-        // Correct lifecycle handling for Video.js
         if (vjsInstance) {
             vjsInstance.pause();
         }
-        // Correct lifecycle handling for JW Player
         try {   
             if (typeof jwplayer !== "undefined" && jwplayer("jwPlayerContainer").getState()) {
                 jwplayer("jwPlayerContainer").remove();
@@ -316,7 +355,6 @@
             return;
         }
 
-        // Save Credentials to memory
         localStorage.setItem('iptv_url', baseUrl);
         localStorage.setItem('iptv_user', username);
         localStorage.setItem('iptv_pass', password);
@@ -327,12 +365,65 @@
         try {
             const res = await fetch(apiUrl);
             channels = await res.json();
+            isLocalM3u = false;
+            document.getElementById('uploadLabel').textContent = "📁 Upload local M3U playlist";
+            document.getElementById('uploadM3u').value = "";
             populateChannelList(channels);
             setStatus(`Online - Managed ${channels.length} items`);
         } catch(e) {
             setStatus("API Connection failed.");
             alert('Failed communicating with IPTV panel. Check CORS configurations or Mixed Content settings.');
         }
+    }
+
+    // Process uploaded text asset playlists locally
+    function handleM3uUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        document.getElementById('uploadLabel').textContent = `📄 ${file.name}`;
+        setStatus("Parsing local file structure...");
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const content = e.target.result;
+            const lines = content.split('\n');
+            const parsedChannels = [];
+            let currentName = "";
+
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i].trim();
+                if (line.startsWith('#EXTINF:')) {
+                    // Extract channel names following commas
+                    const commaIndex = line.lastIndexOf(',');
+                    if (commaIndex !== -1) {
+                        currentName = line.substring(commaIndex + 1).trim();
+                    } else {
+                        currentName = "Unnamed Channel";
+                    }
+                } else if (line && !line.startsWith('#')) {
+                    // It's a stream URL target
+                    parsedChannels.push({
+                        name: currentName || `Channel ${parsedChannels.length + 1}`,
+                        stream_id: `local_${parsedChannels.length}`,
+                        direct_url: line // Cache direct file URL addresses
+                    });
+                    currentName = ""; 
+                }
+            }
+
+            if (parsedChannels.length === 0) {
+                alert("No valid targets identified inside file stream.");
+                setStatus("Parsing stopped.");
+                return;
+            }
+
+            channels = parsedChannels;
+            isLocalM3u = true;
+            populateChannelList(channels);
+            setStatus(`Local Playlist - Loaded ${channels.length} items`);
+        };
+        reader.readAsText(file);
     }
 
     function populateChannelList(list) {
@@ -367,12 +458,12 @@
     });
 
     function playSelected() {
-        const baseUrl = document.getElementById('baseUrl').value.trim();
-        const username = document.getElementById('username').value.trim();
-        const password = document.getElementById('password').value.trim();
         const manualId = document.getElementById('manualChannel').value.trim();
+        if (manualId) {
+            currentChannelId = manualId;
+            isLocalM3u = false; // Fall back to dynamic assembly on manual parameters
+        }
 
-        if (manualId) currentChannelId = manualId;
         if (!currentChannelId) {
             alert("Please pick a channel context first!");
             return;
@@ -380,15 +471,31 @@
 
         const player = document.getElementById('playerSelect').value;
         const format = document.getElementById('formatSelect').value;
-
         hideAllPlayers();
-        lastStreamUrl = `${baseUrl}/live/${username}/${password}/${currentChannelId}.${format}`;
-        setStatus(`Streaming Manifest ID: ${currentChannelId}`);
+
+        if (isLocalM3u) {
+            // Read target explicitly from user M3U parsed list context object 
+            const selectedChannel = channels.find(c => c.stream_id === currentChannelId);
+            if (selectedChannel && selectedChannel.direct_url) {
+                lastStreamUrl = selectedChannel.direct_url;
+            } else {
+                alert("Stream source location unavailable.");
+                return;
+            }
+        } else {
+            // Fall back to server credentials assembly
+            const baseUrl = document.getElementById('baseUrl').value.trim();
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value.trim();
+            lastStreamUrl = `${baseUrl}/live/${username}/${password}/${currentChannelId}.${format}`;
+        }
+
+        setStatus(`Streaming Context ID: ${currentChannelId}`);
 
         if (player === "hls") {
             const video = document.getElementById('hlsPlayer');
             video.style.display = 'block';
-            if (Hls.isSupported() && format === "m3u8") {
+            if (Hls.isSupported() && (lastStreamUrl.includes("m3u8") || format === "m3u8")) {
                 hlsInstance = new Hls();
                 hlsInstance.loadSource(lastStreamUrl);
                 hlsInstance.attachMedia(video);
@@ -414,7 +521,7 @@
             }
             vjsInstance.src({
                 src: lastStreamUrl,
-                type: format === "m3u8" ? 'application/x-mpegURL' : 'video/mp2t'
+                type: (lastStreamUrl.includes("m3u8") || format === "m3u8") ? 'application/x-mpegURL' : 'video/mp2t'
             });
             vjsInstance.play();
         } 
@@ -446,15 +553,23 @@
 
     function downloadPlaylist() {
         if (channels.length === 0) return alert("No active channels extracted to output.");
-        const baseUrl = document.getElementById('baseUrl').value.trim();
-        const username = document.getElementById('username').value.trim();
-        const password = document.getElementById('password').value.trim();
-        const format = document.getElementById('formatSelect').value;
-
+        
         let m3u = "#EXTM3U\n";
-        channels.forEach(ch => {
-            m3u += `#EXTINF:-1,${ch.name}\n${baseUrl}/live/${username}/${password}/${ch.stream_id}.${format}\n`;
-        });
+
+        if (isLocalM3u) {
+            channels.forEach(ch => {
+                m3u += `#EXTINF:-1,${ch.name}\n${ch.direct_url}\n`;
+            });
+        } else {
+            const baseUrl = document.getElementById('baseUrl').value.trim();
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value.trim();
+            const format = document.getElementById('formatSelect').value;
+
+            channels.forEach(ch => {
+                m3u += `#EXTINF:-1,${ch.name}\n${baseUrl}/live/${username}/${password}/${ch.stream_id}.${format}\n`;
+            });
+        }
 
         const blob = new Blob([m3u], { type: "application/x-mpegURL" });
         const a = document.createElement('a');
@@ -464,6 +579,7 @@
     }
 
     document.getElementById('loadChannelsBtn').onclick = loadChannels;
+    document.getElementById('uploadM3u').onchange = handleM3uUpload;
     document.getElementById('playBtn').onclick = playSelected;
     document.getElementById('copyBtn').onclick = copyUrl;
     document.getElementById('downloadBtn').onclick = downloadPlaylist;
