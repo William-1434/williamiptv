@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium IPTV Multi-Player</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+    <script src="https://cdn.jwplayer.com/libraries/IDzF9Zmk.js"></script>
+
+    <link href="https://vjs.zencdn.net/7.24.1/video-js.css" rel="stylesheet" />
+    <script src="https://vjs.zencdn.net/7.24.1/video.min.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/clappr@latest/dist/clappr.min.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.9.3/shaka-player.compiled.min.js"></script>
+
+    <style>
+        :root {
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --bg-input: #334155;
+            --accent: #6366f1;
+            --accent-hover: #4f46e5;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #475569;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            padding: 20px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 15px;
+        }
+
+        h2 {
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .status-badge {
+            background: var(--bg-card);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+        }
+
+        /* App Layout */
+        .dashboard {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 20px;
+            flex: 1;
+            min-height: 0; /* Important for inner scrolling */
+        }
+
+        /* Left Sidebar: Channels */
+        .sidebar {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            border: 1px solid var(--border);
+        }
+
+        /* Right Content: Config & Player */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            min-height: 0;
+        }
+
+        .panel {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border);
+        }
+
+        /* Form Controls */
+        .form-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+
+        input, select, button {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.9rem;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        input:focus, select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+        }
+
+        input::placeholder {
+            color: var(--text-muted);
+        }
+
+        button {
+            background: var(--accent);
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        button:hover {
+            background: var(--accent-hover);
+        }
+
+        button.secondary {
+            background: transparent;
+            border: 1px solid var(--border);
+        }
+
+        button.secondary:hover {
+            background: var(--bg-input);
+        }
+
+        /* Channel List Styling */
+        .channel-list-container {
+            flex: 1;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(0,0,0,0.2);
+        }
+
+        .channel-item {
+            padding: 12px;
+            cursor: pointer;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            transition: background 0.2s;
+            font-size: 0.9rem;
+        }
+
+        .channel-item:hover, .channel-item.active {
+            background: var(--accent);
+            color: white;
+        }
+
+        /* Player Workspace */
+        #playerContainer {
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            flex: 1;
+            position: relative;
+            border: 1px solid var(--border);
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #playerContainer video,
+        #playerContainer #jwPlayerContainer,
+        #playerContainer #clapprPlayer,
+        #playerContainer .video-js {
+            width: 100% !important;
+            height: 100% !important;
+            max-height: 100%;
+        }
+
+        .placeholder-text {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        /* Fullscreen Reset Fixes */
+        video:fullscreen { object-fit: contain !important; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h2>Custom IPTV Multi-Player</h2>
+        <div class="status-badge" id="statusText">System Ready</div>
+    </header>
+
+    <div class="dashboard">
+        <aside class="sidebar">
+            <h3>Channels</h3>
+            <input type="text" id="searchBox" placeholder="Search channels...">
+            <div class="channel-list-container" id="channelList">
+                <div style="padding: 20px; text-align: center; color: var(--text-muted);">Load your servers parameters to fetch channels.</div>
+            </div>
+            <input type="text" id="manualChannel" placeholder="Or enter manual Stream ID">
+        </aside>
+
+        <main class="main-content">
+            <section class="panel form-group" id="serverControls">
+                <input type="text" id="baseUrl" placeholder="Base URL (e.g. http://server:8080)" style="flex: 2; min-width: 200px;">
+                <input type="text" id="username" placeholder="Username">
+                <input type="text" id="password" placeholder="Password" type="password">
+                <button id="loadChannelsBtn">Load Data</button>
+            </section>
+
+            <section class="panel form-group">
+                <select id="playerSelect">
+                    <option value="hls">HLS.js</option>
+                    <option value="jw">JW Player</option>
+                    <option value="videojs">Video.js</option>
+                    <option value="clappr">Clappr</option>
+                    <option value="shaka">Shaka Player</option>
+                </select>
+
+                <select id="formatSelect">
+                    <option value="m3u8">M3U8 (HLS)</option>
+                    <option value="ts">TS (MPEG-TS)</option>
+                </select>
+
+                <button id="playBtn">Play Stream</button>
+                <button id="copyBtn" class="secondary">Copy Stream Link</button>
+                <button id="downloadBtn" class="secondary">Export M3U</button>
+            </section>
+
+            <div id="playerContainer">
+                <div class="placeholder-text" id="playerPlaceholder">No Stream Active</div>
+                <video id="hlsPlayer" controls style="display:none;"></video>
+                <div id="jwPlayerContainer" style="display:none;"></div>
+                <video id="videojsPlayer" class="video-js vjs-default-skin" controls style="display:none;"></video>
+                <div id="clapprPlayer" style="display:none;"></div>
+                <video id="shakaPlayer" controls style="display:none;"></video>
+            </div>
+        </main>
+    </div>
+
+<script>
+    let channels = [];
+    let clapprInstance = null;
+    let hlsInstance = null;
+    let shakaInstance = null;
+    let vjsInstance = null;
+    let currentChannelId = null;
+    let lastStreamUrl = "";
+
+    // Load credentials from storage on setup
+    window.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('baseUrl').value = localStorage.getItem('iptv_url') || '';
+        document.getElementById('username').value = localStorage.getItem('iptv_user') || '';
+        document.getElementById('password').value = localStorage.getItem('iptv_pass') || '';
+    });
+
+    function setStatus(msg) {
+        document.getElementById('statusText').textContent = msg;
+    }
+
+    function hideAllPlayers() {
+        document.getElementById('playerPlaceholder').style.display = 'none';
+        document.getElementById('hlsPlayer').style.display = 'none';
+        document.getElementById('jwPlayerContainer').style.display = 'none';
+        document.getElementById('videojsPlayer').style.display = 'none';
+        document.getElementById('clapprPlayer').style.display = 'none';
+        document.getElementById('shakaPlayer').style.display = 'none';
+
+        if (clapprInstance) { clapprInstance.destroy(); clapprInstance = null; }
+        if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+        if (shakaInstance) { shakaInstance.destroy(); shakaInstance = null; }
+        
+        // Correct lifecycle handling for Video.js
+        if (vjsInstance) {
+            vjsInstance.pause();
+        }
+        // Correct lifecycle handling for JW Player
+        try {   
+            if (typeof jwplayer !== "undefined" && jwplayer("jwPlayerContainer").getState()) {
+                jwplayer("jwPlayerContainer").remove();
+            }
+        } catch(e) {}
+    }
+
+    async function loadChannels() {
+        const baseUrl = document.getElementById('baseUrl').value.trim();
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value.trim();
+
+        if (!baseUrl || !username || !password) {
+            alert("Missing Server Credentials!");
+            return;
+        }
+
+        // Save Credentials to memory
+        localStorage.setItem('iptv_url', baseUrl);
+        localStorage.setItem('iptv_user', username);
+        localStorage.setItem('iptv_pass', password);
+
+        setStatus("Fetching channel payload...");
+        const apiUrl = `${baseUrl}/player_api.php?username=${username}&password=${password}&action=get_live_streams`;
+
+        try {
+            const res = await fetch(apiUrl);
+            channels = await res.json();
+            populateChannelList(channels);
+            setStatus(`Online - Managed ${channels.length} items`);
+        } catch(e) {
+            setStatus("API Connection failed.");
+            alert('Failed communicating with IPTV panel. Check CORS configurations or Mixed Content settings.');
+        }
+    }
+
+    function populateChannelList(list) {
+        const container = document.getElementById('channelList');
+        container.innerHTML = '';
+
+        if (!list || list.length === 0) {
+            container.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted)">No Channels Found</div>';
+            return;
+        }
+
+        list.forEach(channel => {
+            const div = document.createElement('div');
+            div.className = 'channel-item';
+            div.textContent = channel.name;
+            div.dataset.id = channel.stream_id;
+            div.onclick = function() {
+                document.querySelectorAll('.channel-item').forEach(el => el.classList.remove('active'));
+                this.classList.add('active');
+                currentChannelId = this.dataset.id;
+                document.getElementById('manualChannel').value = '';
+                playSelected();
+            };
+            container.appendChild(div);
+        });
+    }
+
+    document.getElementById('searchBox').addEventListener('input', function() {
+        const query = this.value.toLowerCase();
+        const filtered = channels.filter(c => c.name.toLowerCase().includes(query));
+        populateChannelList(filtered);
+    });
+
+    function playSelected() {
+        const baseUrl = document.getElementById('baseUrl').value.trim();
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value.trim();
+        const manualId = document.getElementById('manualChannel').value.trim();
+
+        if (manualId) currentChannelId = manualId;
+        if (!currentChannelId) {
+            alert("Please pick a channel context first!");
+            return;
+        }
+
+        const player = document.getElementById('playerSelect').value;
+        const format = document.getElementById('formatSelect').value;
+
+        hideAllPlayers();
+        lastStreamUrl = `${baseUrl}/live/${username}/${password}/${currentChannelId}.${format}`;
+        setStatus(`Streaming Manifest ID: ${currentChannelId}`);
+
+        if (player === "hls") {
+            const video = document.getElementById('hlsPlayer');
+            video.style.display = 'block';
+            if (Hls.isSupported() && format === "m3u8") {
+                hlsInstance = new Hls();
+                hlsInstance.loadSource(lastStreamUrl);
+                hlsInstance.attachMedia(video);
+                video.play();
+            } else {
+                video.src = lastStreamUrl;
+                video.play();
+            }
+        } 
+        else if (player === "jw") {
+            document.getElementById('jwPlayerContainer').style.display = 'block';
+            jwplayer("jwPlayerContainer").setup({
+                file: lastStreamUrl,
+                width: "100%",
+                height: "100%",
+                autostart: true
+            });
+        } 
+        else if (player === "videojs") {
+            document.getElementById('videojsPlayer').style.display = 'block';
+            if (!vjsInstance) {
+                vjsInstance = videojs('videojsPlayer', { fluid: false });
+            }
+            vjsInstance.src({
+                src: lastStreamUrl,
+                type: format === "m3u8" ? 'application/x-mpegURL' : 'video/mp2t'
+            });
+            vjsInstance.play();
+        } 
+        else if (player === "clappr") {
+            document.getElementById('clapprPlayer').style.display = 'block';
+            clapprInstance = new Clappr.Player({
+                source: lastStreamUrl,
+                parentId: '#clapprPlayer',
+                autoPlay: true,
+                width: '100%',
+                height: '100%'
+            });
+        } 
+        else if (player === "shaka") {
+            const video = document.getElementById('shakaPlayer');
+            video.style.display = 'block';
+            shakaInstance = new shaka.Player(video);
+            shakaInstance.load(lastStreamUrl)
+                .then(() => video.play())
+                .catch(e => console.error("Shaka error engine:", e));
+        }
+    }
+
+    function copyUrl() {
+        if (!lastStreamUrl) return;
+        navigator.clipboard.writeText(lastStreamUrl);
+        setStatus("Stream link pushed to clipboard!");
+    }
+
+    function downloadPlaylist() {
+        if (channels.length === 0) return alert("No active channels extracted to output.");
+        const baseUrl = document.getElementById('baseUrl').value.trim();
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value.trim();
+        const format = document.getElementById('formatSelect').value;
+
+        let m3u = "#EXTM3U\n";
+        channels.forEach(ch => {
+            m3u += `#EXTINF:-1,${ch.name}\n${baseUrl}/live/${username}/${password}/${ch.stream_id}.${format}\n`;
+        });
+
+        const blob = new Blob([m3u], { type: "application/x-mpegURL" });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = "playlist.m3u";
+        a.click();
+    }
+
+    document.getElementById('loadChannelsBtn').onclick = loadChannels;
+    document.getElementById('playBtn').onclick = playSelected;
+    document.getElementById('copyBtn').onclick = copyUrl;
+    document.getElementById('downloadBtn').onclick = downloadPlaylist;
+</script>
+</body>
+</html>
