@@ -306,40 +306,34 @@
         } catch(e) {}
     }
 
-    async function async function loadChannels() {
-    const baseUrl = document.getElementById('baseUrl').value.trim();
-    const username = document.getElementById('username').value.trim();
-    const password = document.getElementById('password').value.trim();
+    async function loadChannels() {
+        const baseUrl = document.getElementById('baseUrl').value.trim();
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value.trim();
 
-    if (!baseUrl || !username || !password) {
-        alert("Missing Server Credentials!");
-        return;
+        if (!baseUrl || !username || !password) {
+            alert("Missing Server Credentials!");
+            return;
+        }
+
+        // Save Credentials to memory
+        localStorage.setItem('iptv_url', baseUrl);
+        localStorage.setItem('iptv_user', username);
+        localStorage.setItem('iptv_pass', password);
+
+        setStatus("Fetching channel payload...");
+        const apiUrl = `${baseUrl}/player_api.php?username=${username}&password=${password}&action=get_live_streams`;
+
+        try {
+            const res = await fetch(apiUrl);
+            channels = await res.json();
+            populateChannelList(channels);
+            setStatus(`Online - Managed ${channels.length} items`);
+        } catch(e) {
+            setStatus("API Connection failed.");
+            alert('Failed communicating with IPTV panel. Check CORS configurations or Mixed Content settings.');
+        }
     }
-
-    // Save Credentials to memory
-    localStorage.setItem('iptv_url', baseUrl);
-    localStorage.setItem('iptv_user', username);
-    localStorage.setItem('iptv_pass', password);
-
-    setStatus("Fetching channel payload...");
-    
-    // 1. Construct your original target URL
-    const targetUrl = `${baseUrl}/player_api.php?username=${username}&password=${password}&action=get_live_streams`;
-    
-    // 2. Wrap it in an HTTPS public proxy to bypass CORS and Mixed Content
-    const proxiedApiUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-
-    try {
-        // Fetch via the proxy instead of directly
-        const res = await fetch(proxiedApiUrl);
-        channels = await res.json();
-        populateChannelList(channels);
-        setStatus(`Online - Managed ${channels.length} items`);
-    } catch(e) {
-        setStatus("API Connection failed.");
-        alert('Failed communicating with IPTV panel even through proxy. Ensure your credentials are valid and the IPTV server is online.');
-    }
-}
 
     function populateChannelList(list) {
         const container = document.getElementById('channelList');
